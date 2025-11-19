@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>STOCKY2000 - Real-Time Watchlist</title>
+    <!-- Load Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        'primary': '#10b981', // Emerald green
+                        'secondary': '#f3f4f6', // Light gray
+                        'dark-bg': '#1f2937', // Dark gray
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                    },
+                }
+            }
+        }
+    </script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #1f2937;
+            color: #f3f4f6;
+        }
+        /* Custom scrollbar for dark theme */
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 8px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: #4b5563; /* Gray-600 */
+            border-radius: 4px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: #374151; /* Gray-700 */
+        }
+    </style>
+    <!-- Load Firebase SDKs -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, addDoc, onSnapshot, collection, query, serverTimestamp, setLogLevel, deleteDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // =========================================================================
+        // 1. FIREBASE INITIALIZATION & AUTHENTICATION
+        // =========================================================================
+
+        // **MANDATORY**: Use the global variables provided by the environment
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'stocky2000-default';
+        const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+
+        // Reference to the user's provided config (for reference only, globals are used)
+        /*
+        const userProvidedConfig = {
+            apiKey: "AIzaSyCgGB2WYn_JeFyRTJC7ung61l0DmQ6edQc",
+            authDomain: "stocky2000-b782b.firebaseapp.com",
+            projectId: "stocky2000-b782b",
+            storageBucket: "stocky2000-b782b.firebasestorage.app",
+            messagingSenderId: "1006195651586",
+            appId: "1:1006195651586:web:522b6e146876adb103231b",
+            measurementId: "G-GGWGTQN1JR"
+        };
+        */
+
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+        
+        // Enable debug logging for Firestore
+        setLogLevel('debug');
+
+        let currentUserId = null;
+        let isAuthReady = false;
+
+        // Sign-in function
+        async function authenticateUser() {
+            try {
+                if (initialAuthToken) {
+                    await signInWithCustomToken(auth, initialAuthToken);
+                } else {
+                    await signInAnonymously(auth);
+                }
+            } catch (error) {
+                console.error("Firebase Auth Error:", error);
+                document.getElementById('user-status').textContent = `Authentication failed: ${error.message}`;
+            }
+        }
+
+        // Auth state change listener (gets called on init and on token refresh)
+        onAuthStateChanged(auth, (user) => {
+            isAuthReady = true;
+            const statusElement = document.getElementById('user-status');
+            const welcomeElement = document.getElementById('welcome-message');
+
+            if (user) {
+                currentUserId = user.uid;
+                statusElement.innerHTML = `✅ Authenticated. User ID: <span class="text-primary font-mono text-sm">${user.uid}</span>`;
+                welcomeElement.textContent = `Welcome, User ${user.uid.substring(0, 8)}! Start tracking stocks.`;
+                setupRealtimeWatchlist();
+            } else {
+                currentUserId = null;
+                statusElement.innerHTML = '⚠️ Not signed in. Attempting sign-in...';
+                authenticateUser(); // Attempt to sign in on state change if not signed in
+            }
+        });
+
+        // =========================================================================
+        // 2. FIRESTORE DATA FUNCTIONS
+        // =========================================================================
+
+        // Get the collection reference (Public data structure)
+        function getWatchlistCollection() {
+            // Path: /artifacts/{appId}/public/data/watchlists
+            return collection(db, `artifacts/${appId}/public/data/watchlists`);
+        }
+
+        /**
+         * Adds a stock ticker to the public watchlist.
+         * @param {string} ticker - The stock ticker symbol (e.g., 'GOOG').
+         */
+        async function addStockToWatchlist(ticker) {
+            if (!currentUserId) {
+                console.error("User not authenticated. Cannot add stock.");
+                return;
+            }
+            if (!ticker) return;
+
+            try {
+                const watchlistRef = getWatchlistCollection();
+                await addDoc(watchlistRef, {
+                    ticker: ticker.toUpperCase(),
+                    ownerId: currentUserId,
+                    timestamp: serverTimestamp(),
+                    // Mock prediction data for the UI
+                    sentiment: Math.random() > 0.5 ? 'Bullish' : 'Bearish',
+                    momentum: (Math.random() * 20 - 10).toFixed(2), // -10.00 to 10.00
+                });
+                document.getElementById('stock-input').value = ''; // Clear input
+            } catch (e) {
+                console.error("Error adding document: ", e);
+                // In a real app, display this error to the user in a modal
+                alert(`Error adding stock: ${e.message}`);
+            }
+        }
+
+        /**
+         * Deletes a stock document from the watchlist.
+         * @param {string} docId - The Firestore document ID.
+         */
+        async function removeStock(docId) {
+            if (!currentUserId) {
+                console.error("User not authenticated. Cannot remove stock.");
+                return;
+            }
+            try {
+                const docRef = doc(db, `artifacts/${appId}/public/data/watchlists`, docId);
+                await deleteDoc(docRef);
+                console.log("Document successfully deleted with ID:", docId);
+            } catch (e) {
+                console.error("Error removing document: ", e);
+                alert(`Error removing stock: ${e.message}`);
+            }
+        }
+
+        /**
+         * Sets up the real-time listener for the public watchlist.
+         */
+        function setupRealtimeWatchlist() {
+            if (!isAuthReady || !currentUserId) {
+                console.log("Authentication not ready, skipping Firestore setup.");
+                return;
+            }
+
+            const watchlistRef = getWatchlistCollection();
+            const q = query(watchlistRef);
+
+            onSnapshot(q, (snapshot) => {
+                const stocks = [];
+                snapshot.forEach((doc) => {
+                    stocks.push({ id: doc.id, ...doc.data() });
+                });
+                renderWatchlist(stocks);
+            }, (error) => {
+                console.error("Realtime listener failed:", error);
+                document.getElementById('watchlist-container').innerHTML = 
+                    `<p class="text-red-400 p-4">Error loading data: ${error.message}</p>`;
+            });
+        }
+
+        // =========================================================================
+        // 3. UI RENDERING & EVENT HANDLERS
+        // =========================================================================
+
+        /**
+         * Renders the current list of stocks.
+         * @param {Array<Object>} stocks - The list of stock objects from Firestore.
+         */
+        function renderWatchlist(stocks) {
+            const container = document.getElementById('watchlist-container');
+            container.innerHTML = ''; // Clear previous content
+
+            if (stocks.length === 0) {
+                container.innerHTML = `<p class="text-gray-400 p-4 text-center">Your watchlist is empty. Add a stock to begin collaboration!</p>`;
+                return;
+            }
+
+            // Simple sort by ticker for visual consistency
+            stocks.sort((a, b) => a.ticker.localeCompare(b.ticker));
+
+            stocks.forEach(stock => {
+                const isBullish = stock.sentiment === 'Bullish';
+                const trendIcon = isBullish ? '▲' : '▼';
+                const trendColor = isBullish ? 'text-green-400' : 'text-red-400';
+                
+                const stockElement = document.createElement('div');
+                stockElement.className = 'flex justify-between items-center p-4 bg-gray-700 rounded-xl shadow-lg hover:shadow-xl transition duration-200 border-l-4 ' + (isBullish ? 'border-primary' : 'border-red-500');
+                
+                stockElement.innerHTML = `
+                    <div class="flex flex-col sm:flex-row sm:items-center">
+                        <span class="text-xl font-bold mr-4">${stock.ticker}</span>
+                        <div class="flex items-center text-sm text-gray-400 mt-1 sm:mt-0">
+                            <span class="mr-3">Added by: ${stock.ownerId ? stock.ownerId.substring(0, 8) : 'Unknown'}</span>
+                            <span class="font-medium ${trendColor}">${trendIcon} ${stock.sentiment} (${stock.momentum}%)</span>
+                        </div>
+                    </div>
+                    <button data-id="${stock.id}" class="remove-btn bg-red-600 hover:bg-red-700 text-white font-semibold py-1 px-3 rounded-lg transition duration-150">
+                        Remove
+                    </button>
+                `;
+                container.appendChild(stockElement);
+            });
+
+            // Attach event listeners to all 'Remove' buttons
+            document.querySelectorAll('.remove-btn').forEach(button => {
+                button.addEventListener('click', (e) => {
+                    const docId = e.target.getAttribute('data-id');
+                    removeStock(docId);
+                });
+            });
+        }
+
+        /**
+         * Handles the form submission to add a new stock.
+         */
+        function handleAddStock(e) {
+            e.preventDefault();
+            const input = document.getElementById('stock-input');
+            const ticker = input.value.trim().toUpperCase();
+            if (ticker.length > 1 && ticker.length <= 5) {
+                addStockToWatchlist(ticker);
+            } else {
+                // In a real app, use a custom modal instead of alert
+                alert("Please enter a valid ticker (2-5 uppercase letters)."); 
+            }
+        }
+
+        // Initialize App on window load
+        window.onload = () => {
+            // Attach main event listener
+            document.getElementById('add-stock-form').addEventListener('submit', handleAddStock);
+            
+            // Start the auth flow
+            authenticateUser();
+        };
+
+    </script>
+</head>
+<body class="min-h-screen p-4 sm:p-8">
+
+    <div class="max-w-4xl mx-auto">
+        
+        <!-- Header & Status -->
+        <header class="text-center mb-8 p-6 bg-gray-800 rounded-2xl shadow-2xl">
+            <h1 class="text-4xl font-extrabold text-primary mb-2">STOCKY2000 📈</h1>
+            <p id="welcome-message" class="text-gray-300 mb-4 text-lg">Loading user status...</p>
+            <div id="user-status" class="text-xs text-gray-500 p-2 bg-gray-900 rounded-lg overflow-x-auto whitespace-nowrap">
+                Authenticating...
+            </div>
+        </header>
+
+        <!-- Stock Input Form -->
+        <div class="bg-gray-800 p-6 sm:p-8 rounded-2xl shadow-xl mb-8">
+            <h2 class="text-2xl font-semibold mb-4 border-b border-gray-700 pb-3">Collaborative Watchlist</h2>
+            <form id="add-stock-form" class="flex flex-col sm:flex-row gap-4">
+                <input 
+                    type="text" 
+                    id="stock-input" 
+                    placeholder="Enter Stock Ticker (e.g., AAPL)" 
+                    required 
+                    maxlength="5"
+                    class="flex-grow p-3 rounded-xl bg-gray-700 text-white placeholder-gray-400 border border-gray-600 focus:border-primary focus:ring-1 focus:ring-primary transition"
+                >
+                <button 
+                    type="submit" 
+                    class="bg-primary hover:bg-emerald-600 text-white font-bold py-3 px-6 rounded-xl shadow-md transition duration-200 transform hover:scale-[1.02] active:scale-[0.98]"
+                >
+                    Add to Watchlist
+                </button>
+            </form>
+            <p class="text-sm text-gray-400 mt-3">Note: All users signed into this app share this public watchlist.</p>
+        </div>
+
+        <!-- Real-Time Watchlist Display -->
+        <div class="h-96 overflow-y-auto space-y-4 custom-scrollbar" id="watchlist-container">
+            <!-- Stock items will be rendered here by JavaScript -->
+            <p class="text-center p-10 text-gray-500">Connecting to Firestore...</p>
+        </div>
+
+    </div>
+
+</body>
+</html>
