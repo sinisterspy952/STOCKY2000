@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Watchlist | STOCKY2000</title> 
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <nav class="navbar">
+        <div class="logo">STOCKY2000</div> 
+        <div class="nav-links">
+            <a href="index.html">Dashboard</a>
+            <a href="watchlist.html" class="active">Watchlist</a>
+            <a href="predictions.html">Predictions</a>
+        </div>
+    </nav>
+
+    <main>
+        <header>
+            <h1>My Watchlist</h1>
+            <p>Your personalized list of tracked stocks and their current performance.</p>
+        </header>
+
+        <section class="watchlist-section">
+            <h2>Tracked Stocks</h2>
+            <table class="watchlist-table" id="watchlist-table">
+                <thead>
+                    <tr>
+                        <th>Ticker</th>
+                        <th>Price ($)</th>
+                        <th>Change Today (%)</th>
+                        <th>Volume</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><a href="#">TSLA</a></td>
+                        <td>250.75</td>
+                        <td class="positive">+1.25%</td>
+                        <td>5.2M</td>
+                        <td><button class="remove-btn">Remove</button></td>
+                    </tr>
+                    <tr>
+                        <td><a href="#">AMZN</a></td>
+                        <td>145.20</td>
+                        <td class="negative">-0.50%</td>
+                        <td>3.1M</td>
+                        <td><button class="remove-btn">Remove</button></td>
+                    </tr>
+                </tbody>
+            </table>
+
+            <p class="empty-message" style="display: none;">Your watchlist is currently empty. Add stocks from the Dashboard!</p>
+        </section>
+    </main>
+    
+    <script src="script.js"></script>
+</body>
+</html>
